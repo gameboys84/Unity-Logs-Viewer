@@ -30,11 +30,3 @@ https://www.assetstore.unity3d.com/en/#!/content/12047
     - Fix Warnings.
     - Fix loading scene from asset bundle error.
 
-
-
-    
-    
-<a href="https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=J9MX5C6Q7B2NY">
-    <img src="https://www.paypalobjects.com/webstatic/en_US/btn/btn_donate_cc_147x47.png">
-    </img>
-</a>
