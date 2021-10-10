@@ -15,6 +15,8 @@
 //use UNITY_CHANGE3 for unity 5.3 (fix for new SceneManger system)
 //use UNITY_CHANGE4 for unity 2018.3 (Networking system)
 
+// #define NO_PASSWORD
+
 using UnityEngine;
 using System.IO;
 using System.Collections;
@@ -99,14 +101,14 @@ public class Reporter : MonoBehaviour
 
 		public string GetSceneName()
 		{
-			if (loadedScene == 255)
+			if ((int)loadedScene == -1 || (int)loadedScene == byte.MaxValue)
 				return "AssetBundleScene";
 
 			return scenes[loadedScene];
 		}
 	}
 
-	List<Sample> samples = new List<Sample>();
+	List<Sample> samples = new List<Sample>(60 * 60 * 60);
 
 	public class Log
 	{
@@ -143,6 +145,9 @@ public class Reporter : MonoBehaviour
 	MultiKeyDictionary<string, string, Log> logsDic = new MultiKeyDictionary<string, string, Log>();
 	//to save memory
 	Dictionary<string, string> cachedString = new Dictionary<string, string>();
+
+	// 0:default, 1:init, 2:checking, 3:ok
+	int checkStatus = 0;
 
 	[HideInInspector]
 	//show hide In Game Logs
@@ -411,6 +416,7 @@ public class Reporter : MonoBehaviour
 		warningContent = new GUIContent("", images.warningImage, "show or hide warnings");
 		errorContent = new GUIContent("", images.errorImage, "show or hide errors");
 
+		checkStatus	= PlayerPrefs.GetInt("Reporter_checkStatus");
 
 		currentView = (ReportView)PlayerPrefs.GetInt("Reporter_currentView", 1);
 		show = (PlayerPrefs.GetInt("Reporter_show") == 1) ? true : false;
@@ -911,6 +917,83 @@ public class Reporter : MonoBehaviour
 		GUILayout.EndArea();
 	}
 
+	float timeCheck = 0.0f;
+	string checkText = "";
+	void DrawCheck()
+	{
+        var eve = Event.current;
+        bool created = GUI.GetNameOfFocusedControl() == "check";
+        if (created || eve.type != EventType.Repaint)
+        {
+            // 每帧会收到 Repaint 和 Layout 2次回调， 创建后先收到Repaint会报错
+            GUILayout.BeginArea(screenRect, backStyle);
+            GUILayout.BeginHorizontal();
+        }
+
+        GUI.SetNextControlName("check");
+        string newCheckText = GUI.TextField(screenRect, checkText, searchStyle);
+        if (!created) GUI.FocusControl("check");
+        
+#if NO_PASSWORD
+		checkStatus = 3;
+#else
+        string ch = "tp";
+		if (newCheckText == ch)
+        {
+			checkStatus = 3;
+        }
+
+		//if (newCheckText == (ch + "ame")) // qpgame
+		//{
+		//	//Debug.Log("checkStatus is 3");
+		//	checkStatus = 3;
+		//}
+		else if (checkText != newCheckText) 
+		{
+            //Debug.Log(checkText + " -> " + newCheckText);
+            timeCheck = Time.realtimeSinceStartup;
+            if (checkText.Length >= 4 && !checkText.StartsWith(ch))
+            {
+                close();
+            }
+
+            checkText = newCheckText;
+		} 
+		else 
+		{
+			if (Time.realtimeSinceStartup - timeCheck >= 5) 
+			{
+				//Debug.Log("auto close, checkStatus is " + checkStatus);
+				close();
+			}
+		}
+#endif
+
+        if (created || eve.type != EventType.Repaint)
+        {
+            GUILayout.EndHorizontal();
+            GUILayout.EndArea();
+        }
+    }
+
+	void close()
+	{
+		show = false;
+		gestureDetector.Clear();
+		
+		checkStatus = checkStatus != 3 ? 0 : checkStatus;
+
+        GUI.FocusControl(null);
+        ReporterGUI gui = gameObject.GetComponent<ReporterGUI>();
+		DestroyImmediate(gui);
+
+		try {
+			gameObject.SendMessage("OnHideReporter");
+		}
+		catch (System.Exception e) {
+			Debug.LogException(e);
+		}
+	}
 
 	void drawInfo_enableDisableToolBarButtons()
 	{
@@ -1184,16 +1267,7 @@ public class Reporter : MonoBehaviour
 		GUILayout.EndHorizontal();
 
 		if (GUILayout.Button(closeContent, barStyle, GUILayout.Width(size.x * 2), GUILayout.Height(size.y * 2))) {
-			show = false;
-			ReporterGUI gui = gameObject.GetComponent<ReporterGUI>();
-			DestroyImmediate(gui);
-
-			try {
-				gameObject.SendMessage("OnHideReporter");
-			}
-			catch (System.Exception e) {
-				Debug.LogException(e);
-			}
+			close();
 		}
 
 
@@ -1621,6 +1695,32 @@ public class Reporter : MonoBehaviour
 
 	}
 
+	bool CheckStatus()
+	{
+		if (checkStatus != 3) {
+			if (show && checkStatus == 0)
+			{
+				Debug.Log("show, check 1");
+				checkStatus = 1;
+			}
+
+			if (checkStatus == 1)
+			{
+				//Debug.Log("GUIDrawCheck, 2");
+				checkText = "";				
+				checkStatus = 2;
+
+				timeCheck = Time.realtimeSinceStartup;
+            }
+            else if (checkStatus == 2)
+			{
+				DrawCheck();				
+			}
+
+			return false;
+		}
+		return true;
+	}
 
 	public void OnGUIDraw()
 	{
@@ -1655,6 +1755,9 @@ public class Reporter : MonoBehaviour
 		detailRect.y = Screen.height - size.y * 3;
 		detailRect.width = Screen.width;
 		detailRect.height = size.y * 3;
+
+        if (!CheckStatus())
+            return;
 
 		if (currentView == ReportView.Info)
 			DrawInfo();
@@ -1874,6 +1977,8 @@ public class Reporter : MonoBehaviour
 
 		calculateStartIndex();
 		if (!show && isGestureDone()) {
+			//Debug.Log("checkStatus is " + checkStatus);
+
 			doShow();
 		}
 
@@ -2062,6 +2167,8 @@ public class Reporter : MonoBehaviour
 	//save user config
 	void OnApplicationQuit()
 	{
+		PlayerPrefs.SetInt("Reporter_checkStatus", checkStatus);
+
 		PlayerPrefs.SetInt("Reporter_currentView", (int)currentView);
 		PlayerPrefs.SetInt("Reporter_show", (show == true) ? 1 : 0);
 		PlayerPrefs.SetInt("Reporter_collapse", (collapse == true) ? 1 : 0);
